@@ -58,8 +58,46 @@ if rebuild:
     with open(embeddings_file, "wb") as f:
         pickle.dump({"hash": data_hash, "embeddings": row_embeddings}, f)
 
+# --- Pre-compute summary statistics for aggregate questions ---
+def build_summary():
+    lines = []
+    lines.append(f"Total employees: {len(df)}")
+
+    dept_counts = df['department'].value_counts()
+    lines.append("\nEmployees per department:")
+    for dept, count in dept_counts.items():
+        lines.append(f"  {dept}: {count}")
+
+    org_counts = df['org_code'].value_counts()
+    lines.append(f"\nTotal unique org codes: {len(org_counts)}")
+    lines.append("\nTop 10 org codes by employee count:")
+    for org, count in org_counts.head(10).items():
+        lines.append(f"  {org}: {count}")
+
+    title_counts = df['title'].value_counts()
+    lines.append("\nEmployees per title:")
+    for title, count in title_counts.items():
+        lines.append(f"  {title}: {count}")
+
+    sup_counts = (df['supervisor_first_name'] + ' ' + df['supervisor_last_name']).value_counts()
+    lines.append("\nTop 10 supervisors by number of direct reports:")
+    for sup, count in sup_counts.head(10).items():
+        lines.append(f"  {sup}: {count}")
+
+    return "\n".join(lines)
+
+
+data_summary = build_summary()
+
 # --- Groq LLM (Llama 3.3 70B) ---
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+AGGREGATE_KEYWORDS = [
+    "most", "least", "how many", "count", "total", "average",
+    "top", "bottom", "all", "list all", "every", "each",
+    "which department", "which org", "biggest", "smallest",
+    "percentage", "breakdown", "summary", "statistics"
+]
 
 
 def ask_llm(question, context):
@@ -70,15 +108,15 @@ def ask_llm(question, context):
                 "role": "system",
                 "content": (
                     "You are an employee information assistant. "
-                    "Answer questions using ONLY the employee records provided. "
+                    "Answer questions using ONLY the data provided. "
                     "Be concise and direct. If someone uses a nickname or partial name, "
                     "match it to the closest employee name in the records. "
-                    "If the answer is not in the records, say 'I could not find that information.'"
+                    "If the answer is not in the data, say 'I could not find that information.'"
                 )
             },
             {
                 "role": "user",
-                "content": f"Employee Records:\n{context}\n\nQuestion: {question}"
+                "content": f"{context}\n\nQuestion: {question}"
             }
         ],
         temperature=0.1,
@@ -92,12 +130,21 @@ TOP_K = 5
 
 
 def get_answer(question):
+    q_lower = question.lower()
+    is_aggregate = any(kw in q_lower for kw in AGGREGATE_KEYWORDS)
+
     q_embedding = embedding_model.encode(question, convert_to_tensor=True)
     scores = util.cos_sim(q_embedding, row_embeddings)[0]
     top_indices = scores.topk(k=min(TOP_K, len(row_sentences))).indices.tolist()
     top_score = scores[top_indices[0]].item()
 
-    context = "\n".join(row_sentences[i] for i in top_indices)
+    individual_records = "\n".join(row_sentences[i] for i in top_indices)
+
+    if is_aggregate:
+        context = f"Dataset Summary:\n{data_summary}\n\nMatching Records:\n{individual_records}"
+    else:
+        context = f"Employee Records:\n{individual_records}"
+
     answer = ask_llm(question, context)
     return answer, top_score
 
