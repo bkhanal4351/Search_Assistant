@@ -68,8 +68,8 @@ def build_summary():
 
     org_counts = df['org_code'].value_counts()
     lines.append(f"\nTotal unique org codes: {len(org_counts)}")
-    lines.append("\nTop 10 org codes by employee count:")
-    for org, count in org_counts.head(10).items():
+    lines.append("\nEmployees per org code:")
+    for org, count in org_counts.items():
         lines.append(f"  {org}: {count}")
 
     title_counts = df['title'].value_counts()
@@ -99,7 +99,10 @@ AGGREGATE_KEYWORDS = [
     "most", "least", "how many", "count", "total", "average",
     "top", "bottom", "all", "list all", "every", "each",
     "which department", "which org", "biggest", "smallest",
-    "percentage", "breakdown", "summary", "statistics"
+    "percentage", "breakdown", "summary", "statistics",
+    "by org", "by department", "by title", "per org", "per department",
+    "per title", "group by", "grouped by", "list of employees",
+    "list employees", "how many employees"
 ]
 
 
@@ -117,6 +120,11 @@ def ask_llm(question, context):
                     "Answer questions using ONLY the data provided. "
                     "Be concise and direct. If someone uses a nickname or partial name, "
                     "match it to the closest employee name in the records. "
+                    "For broad or aggregate questions (e.g., 'list employees by org code', "
+                    "'how many people per department'), use the Dataset Summary to give "
+                    "counts and breakdowns rather than listing individual employees. "
+                    "Only list individual employees when the user asks about specific "
+                    "people, names, or small groups. "
                     "If the answer is not in the data, say 'I could not find that information.'"
                 )
             },
