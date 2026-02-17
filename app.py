@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Load and clean data ---
+# Reads employee records from Excel and standardizes column names
+# so the rest of the code can use consistent, lowercase field names.
 df = pd.read_excel("employees.xlsx")
 df.rename(columns={
     "EMPL_ID": "empl_id",
@@ -26,6 +28,8 @@ df.rename(columns={
 }, inplace=True)
 
 
+# Converts a single DataFrame row into a readable sentence.
+# This sentence format is what gets embedded and later fed to the LLM as context.
 def row_to_text(row):
     return (
         f"{row['first_name']} {row['last_name']} (ID: {row['empl_id']}) works as {row['title']} "
@@ -38,9 +42,14 @@ def row_to_text(row):
 row_sentences = [row_to_text(row) for _, row in df.iterrows()]
 
 # --- Load embedding model ---
+# all-MiniLM-L6-v2 converts text into 384-dimensional vectors.
+# Used to measure semantic similarity between a user's question and employee records.
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
 
 # --- Load or generate cached embeddings (auto-detects data changes) ---
+# Computes an MD5 hash of the Excel file and compares it to the cached hash.
+# If the data has changed (or no cache exists), embeddings are regenerated.
+# If the data is unchanged, cached embeddings are loaded for fast startup.
 data_file = "employees.xlsx"
 embeddings_file = "row_embeddings.pkl"
 data_hash = hashlib.md5(open(data_file, "rb").read()).hexdigest()
@@ -58,7 +67,12 @@ if rebuild:
     with open(embeddings_file, "wb") as f:
         pickle.dump({"hash": data_hash, "embeddings": row_embeddings}, f)
 
+
 # --- Pre-compute summary statistics for aggregate questions ---
+# Builds a text summary of the entire dataset: employee counts by department,
+# org code, title, and supervisor. This is passed to the LLM when the user
+# asks aggregate questions (e.g., "which org has the most employees?")
+# so it can answer without needing to see every individual record.
 def build_summary():
     lines = []
     lines.append(f"Total employees: {len(df)}")
@@ -90,8 +104,13 @@ def build_summary():
 data_summary = build_summary()
 
 # --- Groq LLM (Llama 3.3 70B) ---
+# Initializes the Groq client for calling Llama 3.3 70B.
+# API key is loaded from the .env file (never hardcoded).
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
+# Keywords that indicate the user is asking an aggregate/analytical question
+# rather than looking up a specific employee. When detected, the LLM receives
+# pre-computed summary statistics in addition to individual matching records.
 AGGREGATE_KEYWORDS = [
     "most", "least", "how many", "count", "total", "average",
     "top", "bottom", "all", "list all", "every", "each",
@@ -100,6 +119,9 @@ AGGREGATE_KEYWORDS = [
 ]
 
 
+# Sends the user's question along with retrieved context to the LLM.
+# The system prompt instructs the LLM to only use the provided data,
+# handle nicknames/partial names, and respond concisely.
 def ask_llm(question, context):
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -125,7 +147,11 @@ def ask_llm(question, context):
     return response.choices[0].message.content
 
 
-# --- RAG: retrieve relevant records then generate answer ---
+# --- RAG pipeline: retrieve relevant records, then generate an answer ---
+# 1. Encodes the user's question into a vector
+# 2. Finds the TOP_K most similar employee records via cosine similarity
+# 3. For aggregate questions: includes dataset summary stats as additional context
+# 4. Passes the context to the LLM to generate a natural language answer
 TOP_K = 5
 
 
@@ -150,6 +176,9 @@ def get_answer(question):
 
 
 # --- Streamlit UI ---
+# Simple interface: text input for questions, spinner while the LLM thinks,
+# then displays the answer with a confidence score (cosine similarity of the
+# best matching record — higher means the retrieval was more relevant).
 st.title("Employee Info Assistant")
 user_question = st.text_input("Ask a question about an employee:")
 

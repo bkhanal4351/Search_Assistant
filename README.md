@@ -206,3 +206,86 @@ The app automatically detects data changes and regenerates embeddings — no man
 | LLM API | Groq (free tier) | Fast inference, 30 requests/min |
 | UI | Streamlit | Web interface |
 | Data | Pandas + openpyxl | Excel file loading and processing |
+
+## Scaling to Production
+
+This section covers what you need to move from a local laptop setup to a shared deployment serving real users.
+
+### Deploying on a Server or VDI
+
+To run the app continuously on a VDI or server so multiple users can access it:
+
+#### 1. Install dependencies on the server
+
+```bash
+pip install streamlit pandas sentence-transformers groq python-dotenv openpyxl
+```
+
+#### 2. Run in headless mode (no browser auto-open)
+
+```bash
+nohup streamlit run app.py --server.port 8501 --server.headless true &
+```
+
+This keeps the app running after you disconnect from the session.
+
+#### 3. Users access it via browser
+
+```
+http://<server-ip-address>:8501
+```
+
+#### 4. Recommended extras for reliability
+
+| What | Why |
+|---|---|
+| Process manager (`systemd` on Linux, Windows Service) | Auto-restarts the app if it crashes |
+| Reverse proxy (Nginx or Apache) | Adds HTTPS, clean URLs, load balancing |
+| Firewall rule | Allow inbound traffic on port 8501 |
+
+**Example `systemd` service file (Linux):**
+
+```ini
+[Unit]
+Description=Employee Search Assistant
+After=network.target
+
+[Service]
+User=your-username
+WorkingDirectory=/path/to/Search_Assistant
+ExecStart=/usr/bin/python3 -m streamlit run app.py --server.port 8501 --server.headless true
+Restart=always
+EnvironmentFile=/path/to/Search_Assistant/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Choosing an LLM for Scale
+
+The current setup uses Groq's free tier (30 requests/min), which works for personal use and small teams. As your user base grows, you'll need to upgrade the LLM provider. The good news: **switching LLMs is a ~5 line change** in `app.py` since only the `ask_llm` function talks to the LLM.
+
+| Provider | Model | Cost (per 1K queries) | Rate Limit | Best For |
+|---|---|---|---|---|
+| **Groq Free** (current) | Llama 3.3 70B | Free | 30 req/min | Personal use, testing |
+| **Groq Paid** | Llama 3.3 70B | ~$0.05-0.10 | Much higher | Small teams (10-50 users) |
+| **OpenAI** | GPT-4o-mini | ~$0.15 | 10,000 req/min | Hundreds to thousands of users |
+| **Azure OpenAI** | GPT-4o-mini | ~$0.15 | Enterprise SLAs | Organizations using Azure |
+| **AWS Bedrock** | Claude / Llama | ~$0.10-0.50 | Auto-scales | Organizations using AWS |
+| **Self-hosted** | Llama 3 via vLLM | GPU server (~$1-3/hr) | Unlimited | Full control, data stays on-prem |
+
+**Recommended path as you scale:**
+
+```text
+Solo / Testing          Small Team (10-50)        Org-wide (100s-1000s)        Enterprise
+Groq Free        -->    Groq Paid             -->  OpenAI / Azure OpenAI   -->  Self-hosted or Cloud AI
+(current)               (just upgrade key)         (change ~5 lines)           (full infra control)
+```
+
+### Key Considerations at Scale
+
+**Data privacy:** If employee data is sensitive, consider self-hosting the LLM (Llama 3 via vLLM on a GPU server) so no data leaves your network. With API-based LLMs (Groq, OpenAI), employee records are sent to external servers as part of each query.
+
+**Concurrent users:** Streamlit runs single-threaded by default. For many concurrent users, deploy with multiple Streamlit workers behind a load balancer, or migrate the backend to a framework like FastAPI.
+
+**Cost control:** At 1,000 queries/day with OpenAI GPT-4o-mini, expect roughly $4-5/month. Costs scale linearly with usage. Self-hosting has a fixed server cost regardless of query volume.
