@@ -4,27 +4,33 @@ A smart employee information assistant powered by RAG (Retrieval-Augmented Gener
 
 ## How It Works
 
-This app uses a two-stage pipeline to answer questions:
+This app uses a three-stage pipeline to answer questions:
 
 ```
 User Question
      |
      v
-[1. RETRIEVAL] ──> Embedding model (all-MiniLM-L6-v2) converts the question
-                   into a vector and finds the top 5 most relevant employee
-                   records using cosine similarity.
+[1. DIRECT LOOKUP] ──> Searches the dataframe for names, departments,
+                       and org codes mentioned in the question.
      |
      v
-[2. GENERATION] ──> LLM (Llama 3.3 70B via Groq) reads those records and
-                    generates a natural language answer.
+[2. SEMANTIC SEARCH] ──> Embedding model (all-MiniLM-L6-v2) converts the
+                         question into a vector and finds the top 5 most
+                         relevant records using cosine similarity (kNN).
+     |
+     v
+[3. GENERATION] ──> LLM (Llama 3.3 70B via Groq) reads the combined
+                    results and generates a natural language answer.
      |
      v
 Answer displayed in Streamlit UI
 ```
 
-**Stage 1 - Retrieval:** Each employee record is converted into a readable sentence (e.g., *"Jean Sanchez (ID: 10000) works as Operations Manager in org FIN80697..."*). These sentences are encoded into embeddings and cached. When a user asks a question, it's encoded the same way and compared against all records to find the most relevant matches.
+**Stage 1 - Direct Lookup:** Before any embedding search, the app checks the question for recognizable names, departments, and org codes. If the question is about a supervisor (e.g., "who reports to Deepa"), it filters the dataframe for all employees under that supervisor. This catches cases where embedding search alone would miss records, like counting all direct reports for a specific manager.
 
-**Stage 2 - Generation:** The top 5 matching records are passed as context to Llama 3.3 70B, which reads them and generates a concise answer. The LLM handles all the intelligence: understanding nicknames, partial names, rephrased questions, and complex queries.
+**Stage 2 - Semantic Search:** Each employee record is converted into a readable sentence (e.g., *"Jean Sanchez (ID: 10000) works as Operations Manager in org FIN80697..."*). These sentences are encoded into embeddings and cached. When a user asks a question, it's encoded the same way and compared against all records via cosine similarity to find the top 5 most relevant matches. Results from both stages are combined and deduplicated.
+
+**Stage 3 - Generation:** The combined records are passed as context to Llama 3.3 70B, which reads them and generates a concise answer. The LLM handles nickname understanding, partial name matching, rephrased questions, and complex queries. For aggregate questions (e.g., "which department has the most employees"), pre-computed summary statistics are also included in the context.
 
 ## Project Structure
 
