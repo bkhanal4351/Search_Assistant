@@ -37,9 +37,9 @@ Answer displayed in Streamlit UI
 ```
 ├── app.py              # Main application (RAG pipeline + Streamlit UI)
 ├── employees.xlsx      # Employee data (2,000 records)
+├── requirements.txt    # Python dependencies for deployment
 ├── .env                # Groq API key (not committed to git)
 ├── .gitignore          # Excludes .env, cache files, OS junk
-├── row_embeddings.pkl  # Auto-generated embedding cache (not committed)
 └── README.md
 ```
 
@@ -139,30 +139,11 @@ python -m streamlit run app.py
 | PyTorch installation fails | Run `pip install torch` separately before installing sentence-transformers |
 | Permission errors | Run Command Prompt as Administrator, or use `pip install --user ...` |
 
-## Embedding Cache (Smart Auto-Rebuild)
+## Embedding Cache
 
-The app caches employee record embeddings in `row_embeddings.pkl` to avoid re-encoding on every startup. The cache is **self-managing**:
+The app uses Streamlit's `@st.cache_resource` to keep the embedding model and pre-computed embeddings in memory across reruns. The first startup downloads the model (~90MB) and encodes all employee records, which takes a few minutes. Subsequent interactions within the same session are fast.
 
-**How it works:**
-1. On startup, the app computes an MD5 hash of `employees.xlsx`
-2. It compares this hash against the one stored in the cache file
-3. **Hash matches** - loads cached embeddings instantly (fast startup)
-4. **Hash differs** (data was modified) - automatically regenerates embeddings and saves a new cache
-5. **No cache exists** (first run) - generates embeddings from scratch
-
-**You never need to manually delete the cache.** Swap `employees.xlsx` with new data, restart the app, and it handles everything.
-
-```
-Startup Flow:
-  employees.xlsx ──> MD5 hash ──> Compare with cached hash
-                                       |
-                          ┌─────────────┴─────────────┐
-                          |                           |
-                      Hash matches               Hash differs
-                          |                           |
-                    Load from cache          Re-encode all records
-                     (instant)              Save new cache + hash
-```
+When running locally, you can also keep the old `row_embeddings.pkl` file-based cache for faster cold starts. On Streamlit Cloud, the in-memory cache handles everything automatically.
 
 ## Example Questions
 
