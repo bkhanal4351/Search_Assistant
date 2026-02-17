@@ -186,10 +186,11 @@ This is a pre-trained sentence transformer. Its job is purely mechanical: conver
 This is a 70-billion parameter model pre-trained on vast amounts of text. It already understands natural language, nicknames, context, and can reason over structured data. We don't fine-tune it. We simply provide employee records as context in the prompt and let it generate an answer. This is the core idea behind RAG: instead of training the model on your data, you *retrieve* the relevant data at query time and *feed it to the model*.
 
 **What to tune instead of retraining:**
-- **System prompt** (`app.py` lines 70-76) - Adjust instructions to change response style or behavior
-- **`TOP_K`** (`app.py` line 90) - Number of records retrieved. Higher = more context for the LLM but slower. Default: 5
-- **`temperature`** (`app.py` line 83) - Lower (0.0-0.2) for factual, deterministic answers. Higher (0.5-1.0) for more varied responses. Default: 0.1
-- **`max_tokens`** (`app.py` line 84) - Maximum response length. Default: 300
+
+- **System prompt** (the `"role": "system"` message inside `ask_llm()`) - Adjust instructions to change response style or behavior
+- **`TOP_K`** (defined before `get_answer()`) - Number of records retrieved via semantic search. Higher = more context but slower. Default: 5
+- **`temperature`** (inside `ask_llm()`) - Lower (0.0-0.2) for factual, deterministic answers. Higher (0.5-1.0) for more varied responses. Default: 0.1
+- **`max_tokens`** (inside `ask_llm()`) - Maximum response length. Default: 300
 
 ## Swapping Your Own Data
 
