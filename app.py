@@ -109,7 +109,7 @@ AGGREGATE_KEYWORDS = [
 # Sends the user's question along with retrieved context to the LLM.
 # The system prompt instructs the LLM to only use the provided data,
 # handle nicknames/partial names, and respond concisely.
-def ask_llm(question, context):
+def ask_llm(question, context, is_aggregate=False):
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
@@ -120,12 +120,15 @@ def ask_llm(question, context):
                     "Answer questions using ONLY the data provided. "
                     "Be concise and direct. If someone uses a nickname or partial name, "
                     "match it to the closest employee name in the records. "
-                    "For broad or aggregate questions (e.g., 'list employees by org code', "
-                    "'how many people per department'), use the Dataset Summary to give "
-                    "counts and breakdowns rather than listing individual employees. "
-                    "Only list individual employees when the user asks about specific "
-                    "people, names, or small groups. "
-                    "If the answer is not in the data, say 'I could not find that information.'"
+                    "For broad questions (e.g., 'list employees by org code', "
+                    "'how many people per department'), present the counts and "
+                    "breakdowns from the Dataset Summary. This IS the answer - "
+                    "showing employee counts per group is the correct response "
+                    "to these types of questions. "
+                    "Only list individual employee names when the user asks about "
+                    "specific people, names, or small groups. "
+                    "If the question is about a specific person and they are not "
+                    "in the data, say 'I could not find that information.'"
                 )
             },
             {
@@ -134,7 +137,7 @@ def ask_llm(question, context):
             }
         ],
         temperature=0.1,
-        max_tokens=300
+        max_tokens=1000 if is_aggregate else 300
     )
     return response.choices[0].message.content
 
@@ -234,7 +237,7 @@ def get_answer(question):
     else:
         context = f"Employee Records ({record_count} found):\n{context_records}"
 
-    answer = ask_llm(question, context)
+    answer = ask_llm(question, context, is_aggregate=is_aggregate)
     return answer, top_score
 
 
