@@ -1,6 +1,4 @@
 import os
-import hashlib
-import pickle
 import pandas as pd
 import streamlit as st
 from sentence_transformers import SentenceTransformer, util
@@ -41,31 +39,17 @@ def row_to_text(row):
 
 row_sentences = [row_to_text(row) for _, row in df.iterrows()]
 
-# --- Load embedding model ---
+# --- Load embedding model and compute embeddings (cached by Streamlit) ---
 # all-MiniLM-L6-v2 converts text into 384-dimensional vectors.
 # Used to measure semantic similarity between a user's question and employee records.
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+# @st.cache_resource keeps these in memory across reruns, avoiding redundant computation.
+@st.cache_resource
+def load_model_and_embeddings(_sentences):
+    model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+    embeddings = model.encode(list(_sentences), convert_to_tensor=True)
+    return model, embeddings
 
-# --- Load or generate cached embeddings (auto-detects data changes) ---
-# Computes an MD5 hash of the Excel file and compares it to the cached hash.
-# If the data has changed (or no cache exists), embeddings are regenerated.
-# If the data is unchanged, cached embeddings are loaded for fast startup.
-data_file = "employees.xlsx"
-embeddings_file = "row_embeddings.pkl"
-data_hash = hashlib.md5(open(data_file, "rb").read()).hexdigest()
-
-rebuild = True
-if os.path.exists(embeddings_file):
-    with open(embeddings_file, "rb") as f:
-        cache = pickle.load(f)
-    if isinstance(cache, dict) and cache.get("hash") == data_hash:
-        row_embeddings = cache["embeddings"]
-        rebuild = False
-
-if rebuild:
-    row_embeddings = embedding_model.encode(row_sentences, convert_to_tensor=True)
-    with open(embeddings_file, "wb") as f:
-        pickle.dump({"hash": data_hash, "embeddings": row_embeddings}, f)
+embedding_model, row_embeddings = load_model_and_embeddings(tuple(row_sentences))
 
 
 # --- Pre-compute summary statistics for aggregate questions ---
