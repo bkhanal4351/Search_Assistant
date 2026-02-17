@@ -1,4 +1,5 @@
 import os
+import hashlib
 import pickle
 import pandas as pd
 import streamlit as st
@@ -39,15 +40,23 @@ row_sentences = [row_to_text(row) for _, row in df.iterrows()]
 # --- Load embedding model ---
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
 
-# --- Load or generate cached embeddings ---
+# --- Load or generate cached embeddings (auto-detects data changes) ---
+data_file = "employees.xlsx"
 embeddings_file = "row_embeddings.pkl"
+data_hash = hashlib.md5(open(data_file, "rb").read()).hexdigest()
+
+rebuild = True
 if os.path.exists(embeddings_file):
     with open(embeddings_file, "rb") as f:
-        row_embeddings = pickle.load(f)
-else:
+        cache = pickle.load(f)
+    if isinstance(cache, dict) and cache.get("hash") == data_hash:
+        row_embeddings = cache["embeddings"]
+        rebuild = False
+
+if rebuild:
     row_embeddings = embedding_model.encode(row_sentences, convert_to_tensor=True)
     with open(embeddings_file, "wb") as f:
-        pickle.dump(row_embeddings, f)
+        pickle.dump({"hash": data_hash, "embeddings": row_embeddings}, f)
 
 # --- Groq LLM (Llama 3.3 70B) ---
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))

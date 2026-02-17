@@ -76,6 +76,88 @@ The first run will:
 
 Subsequent runs load from cache and start instantly.
 
+## Setup for Windows Users
+
+### Prerequisites
+
+1. Install **Python 3.9+** from [python.org](https://www.python.org/downloads/). During installation, check **"Add Python to PATH"**.
+2. Open **Command Prompt** or **PowerShell**.
+
+### Install dependencies
+
+```cmd
+pip install streamlit pandas sentence-transformers groq python-dotenv openpyxl
+```
+
+If `pip` is not recognized, try:
+
+```cmd
+python -m pip install streamlit pandas sentence-transformers groq python-dotenv openpyxl
+```
+
+### Create the `.env` file
+
+In the project folder, create a file named `.env` (no filename, just the extension). You can do this in PowerShell:
+
+```powershell
+echo GROQ_API_KEY=your_api_key_here > .env
+```
+
+Or in Command Prompt:
+
+```cmd
+echo GROQ_API_KEY=your_api_key_here > .env
+```
+
+Alternatively, create it manually in any text editor and save it as `.env` (make sure it's not saved as `.env.txt` — turn on "Show file extensions" in File Explorer to verify).
+
+### Run the app
+
+```cmd
+streamlit run app.py
+```
+
+If that doesn't work:
+
+```cmd
+python -m streamlit run app.py
+```
+
+### Common Windows Issues
+
+| Issue | Fix |
+|---|---|
+| `pip` not recognized | Use `python -m pip install ...` instead |
+| `streamlit` not recognized | Use `python -m streamlit run app.py` instead |
+| `.env` file saved as `.env.txt` | Turn on "Show file extensions" in File Explorer settings and rename |
+| PyTorch installation fails | Run `pip install torch` separately before installing sentence-transformers |
+| Permission errors | Run Command Prompt as Administrator, or use `pip install --user ...` |
+
+## Embedding Cache (Smart Auto-Rebuild)
+
+The app caches employee record embeddings in `row_embeddings.pkl` to avoid re-encoding on every startup. The cache is **self-managing**:
+
+**How it works:**
+1. On startup, the app computes an MD5 hash of `employees.xlsx`
+2. It compares this hash against the one stored in the cache file
+3. **Hash matches** — loads cached embeddings instantly (fast startup)
+4. **Hash differs** (data was modified) — automatically regenerates embeddings and saves a new cache
+5. **No cache exists** (first run) — generates embeddings from scratch
+
+**You never need to manually delete the cache.** Swap `employees.xlsx` with new data, restart the app, and it handles everything.
+
+```
+Startup Flow:
+  employees.xlsx ──> MD5 hash ──> Compare with cached hash
+                                       |
+                          ┌─────────────┴─────────────┐
+                          |                           |
+                      Hash matches               Hash differs
+                          |                           |
+                    Load from cache          Re-encode all records
+                     (instant)              Save new cache + hash
+```
+
 ## Example Questions
 
 | Question | What it tests |
@@ -98,10 +180,10 @@ This is a pre-trained sentence transformer. Its job is purely mechanical — con
 This is a 70-billion parameter model pre-trained on vast amounts of text. It already understands natural language, nicknames, context, and can reason over structured data. We don't fine-tune it — we simply provide employee records as context in the prompt and let it generate an answer. This is the core idea behind RAG: instead of training the model on your data, you *retrieve* the relevant data at query time and *feed it to the model*.
 
 **What to tune instead of retraining:**
-- **System prompt** (`app.py` lines 62-67) — Adjust instructions to change response style or behavior
-- **`TOP_K`** (`app.py` line 82) — Number of records retrieved. Higher = more context for the LLM but slower. Default: 5
-- **`temperature`** (`app.py` line 75) — Lower (0.0-0.2) for factual, deterministic answers. Higher (0.5-1.0) for more varied responses. Default: 0.1
-- **`max_tokens`** (`app.py` line 76) — Maximum response length. Default: 300
+- **System prompt** (`app.py` lines 70-76) — Adjust instructions to change response style or behavior
+- **`TOP_K`** (`app.py` line 90) — Number of records retrieved. Higher = more context for the LLM but slower. Default: 5
+- **`temperature`** (`app.py` line 83) — Lower (0.0-0.2) for factual, deterministic answers. Higher (0.5-1.0) for more varied responses. Default: 0.1
+- **`max_tokens`** (`app.py` line 84) — Maximum response length. Default: 300
 
 ## Swapping Your Own Data
 
@@ -113,7 +195,7 @@ org_code, department, Supervisor_EMPLID, Supervisor_first_name,
 Supervisor_last_name, supervisor_email
 ```
 
-Then delete `row_embeddings.pkl` (so embeddings regenerate) and restart the app.
+The app automatically detects data changes and regenerates embeddings — no manual steps needed.
 
 ## Tech Stack
 
