@@ -178,7 +178,7 @@ def get_answer(question):
 # --- Streamlit UI ---
 # Simple interface: text input for questions, spinner while the LLM thinks,
 # then displays the answer with a confidence score (cosine similarity of the
-# best matching record — higher means the retrieval was more relevant).
+# best matching record - higher means the retrieval was more relevant).
 st.title("Employee Info Assistant")
 user_question = st.text_input("Ask a question about an employee:")
 
