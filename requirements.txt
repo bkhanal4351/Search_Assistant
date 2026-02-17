@@ -1,7 +1,8 @@
 pandas
+openpyxl
 streamlit==1.44.1
 altair<5
-torch
+torch --index-url https://download.pytorch.org/whl/cpu
 sentence-transformers
 groq
 python-dotenv
