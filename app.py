@@ -147,11 +147,65 @@ def ask_llm(question, context):
     return response.choices[0].message.content
 
 
+# --- Direct dataframe lookup for specific filters ---
+# Searches the actual dataframe for names, departments, and org codes
+# mentioned in the question. This catches cases that embedding search
+# misses, like "who reports to Deepa" (needs all of Deepa's reports,
+# not just 5 semantically similar records).
+def lookup_records(question):
+    q_lower = question.lower()
+    matches = pd.DataFrame()
+
+    # Check for supervisor-related questions
+    sup_keywords = ["report", "under", "supervis", "manage", "direct report", "team"]
+    is_supervisor_query = any(kw in q_lower for kw in sup_keywords)
+
+    # Search by name across employee and supervisor columns
+    all_first_names = set(df['first_name'].str.lower().unique()) | set(df['supervisor_first_name'].str.lower().unique())
+    all_last_names = set(df['last_name'].str.lower().unique()) | set(df['supervisor_last_name'].str.lower().unique())
+
+    matched_first = [n for n in all_first_names if n in q_lower]
+    matched_last = [n for n in all_last_names if n in q_lower]
+
+    if is_supervisor_query and matched_first:
+        for name in matched_first:
+            sup_matches = df[df['supervisor_first_name'].str.lower() == name]
+            if matched_last:
+                for lname in matched_last:
+                    refined = sup_matches[sup_matches['supervisor_last_name'].str.lower() == lname]
+                    if len(refined) > 0:
+                        sup_matches = refined
+            matches = pd.concat([matches, sup_matches])
+    elif matched_first or matched_last:
+        for name in matched_first:
+            matches = pd.concat([matches, df[df['first_name'].str.lower() == name]])
+            matches = pd.concat([matches, df[df['supervisor_first_name'].str.lower() == name]])
+        for name in matched_last:
+            matches = pd.concat([matches, df[df['last_name'].str.lower() == name]])
+            matches = pd.concat([matches, df[df['supervisor_last_name'].str.lower() == name]])
+
+    # Search by department
+    all_depts = set(df['department'].str.lower().unique())
+    matched_depts = [d for d in all_depts if d in q_lower]
+    for dept in matched_depts:
+        matches = pd.concat([matches, df[df['department'].str.lower() == dept]])
+
+    # Search by org code
+    all_orgs = set(df['org_code'].str.lower().unique())
+    matched_orgs = [o for o in all_orgs if o in q_lower]
+    for org in matched_orgs:
+        matches = pd.concat([matches, df[df['org_code'].str.lower() == org]])
+
+    matches = matches.drop_duplicates(subset='empl_id')
+    return matches
+
+
 # --- RAG pipeline: retrieve relevant records, then generate an answer ---
-# 1. Encodes the user's question into a vector
-# 2. Finds the TOP_K most similar employee records via cosine similarity
-# 3. For aggregate questions: includes dataset summary stats as additional context
-# 4. Passes the context to the LLM to generate a natural language answer
+# 1. Does a direct dataframe lookup for names, departments, and org codes
+# 2. Encodes the user's question into a vector for semantic search
+# 3. Combines lookup results with top-K embedding matches
+# 4. For aggregate questions: includes dataset summary stats
+# 5. Passes the context to the LLM to generate a natural language answer
 TOP_K = 5
 
 
@@ -159,17 +213,34 @@ def get_answer(question):
     q_lower = question.lower()
     is_aggregate = any(kw in q_lower for kw in AGGREGATE_KEYWORDS)
 
+    # Direct lookup in the dataframe for exact matches
+    lookup_matches = lookup_records(question)
+    lookup_texts = [row_to_text(row) for _, row in lookup_matches.iterrows()]
+
+    # Embedding-based semantic search
     q_embedding = embedding_model.encode(question, convert_to_tensor=True)
     scores = util.cos_sim(q_embedding, row_embeddings)[0]
     top_indices = scores.topk(k=min(TOP_K, len(row_sentences))).indices.tolist()
     top_score = scores[top_indices[0]].item()
 
-    individual_records = "\n".join(row_sentences[i] for i in top_indices)
+    embedding_records = [row_sentences[i] for i in top_indices]
+
+    # Combine both sources, deduplicating
+    all_records = lookup_texts + [r for r in embedding_records if r not in lookup_texts]
+
+    # Cap at 50 records to avoid exceeding LLM context limits.
+    # For large result sets, include a count so the LLM knows the full picture.
+    record_count = len(all_records)
+    if record_count > 50:
+        context_records = "\n".join(all_records[:50])
+        context_records = f"Showing 50 of {record_count} matching records:\n{context_records}"
+    else:
+        context_records = "\n".join(all_records)
 
     if is_aggregate:
-        context = f"Dataset Summary:\n{data_summary}\n\nMatching Records:\n{individual_records}"
+        context = f"Dataset Summary:\n{data_summary}\n\nMatching Records ({record_count} found):\n{context_records}"
     else:
-        context = f"Employee Records:\n{individual_records}"
+        context = f"Employee Records ({record_count} found):\n{context_records}"
 
     answer = ask_llm(question, context)
     return answer, top_score
